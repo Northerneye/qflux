@@ -1,9 +1,8 @@
 import numpy as np
 from qiskit import QuantumCircuit
-from qiskit.primitives import Estimator
 from qiskit.quantum_info import SparsePauliOp
-from qiskit.providers.aer.noise import NoiseModel
-from qiskit.providers.fake_provider import FakeSherbrooke
+from qiskit_aer import AerSimulator
+from qiskit_aer.primitives import Estimator
 
 
 # To change the ansatz, apply_param and measure_der must both be modified.
@@ -50,7 +49,7 @@ def A_Circuit(params, i, j, N):
             hadamard test of the generators of parameters i and j.  The value of the A_ij matrix 
             can be found by measuring the ancilla qubit (qubit N) in the Z basis.
     """
-    qc = QuantumCircuit(N+1, 1)
+    qc = QuantumCircuit(N+1)
     qc.h(N)
     for parameter in range(len(params)):# Apply parameterized gates
         if(parameter == i):
@@ -63,7 +62,7 @@ def A_Circuit(params, i, j, N):
     qc.h(N)
     return qc
 
-def Measure_A(init_circ, params, N, shots=2**10, noisy=False):
+def Measure_A(init_circ, params, N, shots=2**10):
     """Create the A_ij matrix through measuring quantum circuits corresponding to each element.
 
     Args:
@@ -71,30 +70,21 @@ def Measure_A(init_circ, params, N, shots=2**10, noisy=False):
         params (numpy.array): A numpy array which contains the values of each parameter of the ansatz.
         N (int): The number of qubits.
         shots (int, optional): The number of shots used to estimate each element of the A_ij matrix. Defaults to 2**10.
-        noisy (bool, optional): A boolean used to turn on and off the Fake-Sherbrooke qiskit noisy backend. Defaults to False.
-
+        
     Returns:
         numpy.array: The A_ij matrix
     """
     A = [[0.0 for i in range(len(params))] for j in range(len(params))]
     for i in range(len(params)):
         for j in range(len(params)-i):
-            qc = QuantumCircuit(N+1, 1)
+            qc = QuantumCircuit(N+1)
             ansatz = A_Circuit(params, i, i+j, N)
             qc = qc.compose(init_circ, [k for k in range(N)])
             qc = qc.compose(ansatz, [k for k in range(N+1)])
-            
             observable = SparsePauliOp.from_list([("Z"+"I"*N, 1.0)])
-            if(noisy):
-                device_backend = FakeSherbrooke() 
-                coupling_map = device_backend.coupling_map
-                noise_model = NoiseModel.from_backend(device_backend)
-                basis_gates = noise_model.basis_gates
-                estimator = Estimator(options={"shots": shots, "noise_model":noise_model, "coupling_map":coupling_map, "basis_gates":basis_gates})
-            else:
-                estimator = Estimator(options={"shots": shots})
-            result = estimator.run(qc, observable).result()
-            
+            simulator = AerSimulator()
+            estimator = Estimator()
+            result = estimator.run(qc, observable, shots=shots).result()
             A[i][i+j] = result.values[0]
     return np.array(A)
 
@@ -115,7 +105,7 @@ def C_Circuit(params, i, pauli_string, N, evolution_type="real"):
             hadamard test of the generators of parameter i.  The value of the C_i matrix 
             can be found by measuring the ancilla qubit (qubit N) in the Z basis.
     """
-    qc = QuantumCircuit(N+1, 1)
+    qc = QuantumCircuit(N+1)
     qc.h(N)
     if(evolution_type=="imaginary"):
         qc.s(N)#To get only imaginary component
@@ -131,7 +121,7 @@ def C_Circuit(params, i, pauli_string, N, evolution_type="real"):
     qc.h(N)
     return qc
 
-def Measure_C(init_circ, params, H, N, shots=2**10, evolution_type="real", noisy=False):
+def Measure_C(init_circ, params, H, N, shots=2**10, evolution_type="real"):
     """Create the C_i vector through measuring quantum circuits corresponding to each element.
 
     Args:
@@ -142,29 +132,21 @@ def Measure_C(init_circ, params, H, N, shots=2**10, evolution_type="real", noisy
         shots (int, optional): The number of shots to be used to measure each element of the C_i vector. Defaults to 2**10.
         evolution_type (str, optional): This determines if the evolution will be real-time or imaginary-time 
             through the addition of an extra gate. Defaults to "real".
-        noisy (bool, optional): A boolean used to turn on and off the Fake-Sherbrooke qiskit noisy backend. Defaults to False.
-
+        
     Returns:
         numpy.array: The C_i vector.
     """
     C = [0.0 for i in range(len(params))]
     for i in range(len(params)):
         for pauli_string in range(len(H.paulis)):
-            qc = QuantumCircuit(N+1, 1)
+            qc = QuantumCircuit(N+1)
             ansatz = C_Circuit(params, i, H.paulis[pauli_string], N, evolution_type=evolution_type)
             qc = qc.compose(init_circ, [k for k in range(N)])
             qc = qc.compose(ansatz, [k for k in range(N+1)])
             observable = SparsePauliOp.from_list([("Z"+"I"*N, 1.0)])
-            if(noisy):
-                device_backend = FakeSherbrooke() 
-                coupling_map = device_backend.coupling_map
-                noise_model = NoiseModel.from_backend(device_backend)
-                basis_gates = noise_model.basis_gates
-                estimator = Estimator(options={"shots": shots, "noise_model":noise_model, "coupling_map":coupling_map, "basis_gates":basis_gates})
-            else:
-                estimator = Estimator(options={"shots": shots})
-            result = estimator.run(qc, observable).result()
-
+            simulator = AerSimulator()
+            estimator = Estimator()
+            result = estimator.run(qc, observable, shots=shots).result()
             C[i] -= 1/2*H.coeffs[pauli_string].real*result.values[0]
     return np.array(C)
     
@@ -205,7 +187,7 @@ def Construct_Ansatz(init_circ, params, N):
     qc = qc.compose(ansatz, [k for k in range(N)])
     return qc
 
-def ansatz_energy(init_circ, params, H, shots=2**14, noisy=False):
+def ansatz_energy(init_circ, params, H, shots=2**14):
     """Measure the energy of the ansatz.
 
     Args:
@@ -213,26 +195,18 @@ def ansatz_energy(init_circ, params, H, shots=2**14, noisy=False):
         params (numpy.array): A numpy vector containing the values of the parameters of the ansatz at a specific time.
         H (SparsePauliOp): The Hamiltonian.
         shots (_type_, optional): The number of shots to be used to measure the energy. Defaults to 2**14.
-        noisy (bool, optional): A boolean used to turn on and off the Fake-Sherbrooke qiskit noisy backend. Defaults to False.
-
+        
     Returns:
         (float, float): Return (energy, variance) from the measured observables.
     """
     N = H.num_qubits
-    from qiskit.primitives import Estimator
-    if(noisy):
-        device_backend = FakeSherbrooke() 
-        coupling_map = device_backend.coupling_map
-        noise_model = NoiseModel.from_backend(device_backend)
-        basis_gates = noise_model.basis_gates
-        estimator = Estimator(options={"shots": shots, "noise_model":noise_model, "coupling_map":coupling_map, "basis_gates":basis_gates})
-    else:
-        estimator = Estimator(options={"shots": shots})
+    simulator = AerSimulator()
+    estimator = Estimator()
     qc = Construct_Ansatz(init_circ, params, N)
-    result = estimator.run(qc, H).result()
+    result = estimator.run(qc, H, shots=shots).result()
     return result.values[0], result.metadata[0]["variance"]
 
-def VarQRTE(n_reps_ansatz, hamiltonian, total_time=1.0, timestep=0.1, init_circ=None, shots=2**10, noisy=False):
+def VarQRTE(n_reps_ansatz, hamiltonian, total_time=1.0, timestep=0.1, init_circ=None, shots=2**10):
     """The Variational Quantum Real Time Evolution (VarQRTE) algorithm.  This uses quantum circuits to measure 
         the elements of two objects, the A_ij matrix and the C_i vector.
 
@@ -243,8 +217,7 @@ def VarQRTE(n_reps_ansatz, hamiltonian, total_time=1.0, timestep=0.1, init_circ=
         timestep (float, optional): A float to determine the size of a single timestep. Defaults to 0.1.
         init_circ (QuantumCircuit, optional): A qiskit circuit constructing the initial state of the system.. Defaults to None.
         shots (int, optional): Number of shots to be used to measure observables. Defaults to 2**10.
-        noisy (bool, optional): A boolean used to turn on and off the Fake-Sherbrooke qiskit noisy backend. Defaults to False.
-
+        
     Returns:
         numpy.array: An array containing all the parameter values of the ansatz throughout its time evolution.  
             These values can be put into Construct_Ansatz, or anstaz_energy to obtain observables of the system.
@@ -259,8 +232,8 @@ def VarQRTE(n_reps_ansatz, hamiltonian, total_time=1.0, timestep=0.1, init_circ=
     for i in range(num_timesteps):
         print(f"Simulating Time={str(timestep*(i+1))}                      ", end="\r")
         theta_dot = np.array([0.0 for j in range(len(my_params))])
-        A = Measure_A(init_circ, my_params, hamiltonian.num_qubits, shots=shots, noisy=noisy)
-        C = Measure_C(init_circ, my_params, hamiltonian, hamiltonian.num_qubits, shots=shots, evolution_type="real", noisy=noisy)
+        A = Measure_A(init_circ, my_params, hamiltonian.num_qubits, shots=shots)
+        C = Measure_C(init_circ, my_params, hamiltonian, hamiltonian.num_qubits, shots=shots, evolution_type="real")
 
         # Approximately invert A using Truncated SVD
         u,s,v=np.linalg.svd(A)
@@ -276,7 +249,7 @@ def VarQRTE(n_reps_ansatz, hamiltonian, total_time=1.0, timestep=0.1, init_circ=
         all_params.append(np.copy(my_params))
     return all_params
 
-def VarQITE(n_reps_ansatz, hamiltonian, total_time, timestep, init_circ=None, shots=2**10, noisy=False):
+def VarQITE(n_reps_ansatz, hamiltonian, total_time, timestep, init_circ=None, shots=2**10):
     """The Variational Quantum Imaginary Time Evolution (VarQITE) algorithm.  This uses quantum circuits to measure 
         the elements of two objects, the A_ij matrix and the C_i vector.
 
@@ -287,7 +260,6 @@ def VarQITE(n_reps_ansatz, hamiltonian, total_time, timestep, init_circ=None, sh
         timestep (float, optional): A float to determine the size of a single timestep. Defaults to 0.1.
         init_circ (QuantumCircuit, optional): A qiskit circuit constructing the initial state of the system.. Defaults to None.
         shots (int, optional): Number of shots to be used to measure observables. Defaults to 2**10.
-        noisy (bool, optional): A boolean used to turn on and off the Fake-Sherbrooke qiskit noisy backend. Defaults to False.
 
     Returns:
         numpy.array: An array containing all the parameter values of the ansatz throughout its time evolution.  
@@ -304,8 +276,8 @@ def VarQITE(n_reps_ansatz, hamiltonian, total_time, timestep, init_circ=None, sh
     for i in range(num_timesteps):
         print(f"Timestep: {str(i*timestep)}                      ", end="\r")
         theta_dot = np.array([0.0 for j in range(len(my_params))])
-        A = np.array(Measure_A(init_circ, my_params, hamiltonian.num_qubits, shots=shots, noisy=noisy))
-        C = np.array(Measure_C(init_circ, my_params, hamiltonian, hamiltonian.num_qubits, shots=shots, noisy=noisy, evolution_type="imaginary"))
+        A = np.array(Measure_A(init_circ, my_params, hamiltonian.num_qubits, shots=shots))
+        C = np.array(Measure_C(init_circ, my_params, hamiltonian, hamiltonian.num_qubits, shots=shots, evolution_type="imaginary"))
 
         # Approximately invert A using Truncated SVD
         u,s,v=np.linalg.svd(A)
